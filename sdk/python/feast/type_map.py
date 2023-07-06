@@ -14,6 +14,7 @@
 
 from collections import defaultdict
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -297,7 +298,7 @@ PYTHON_SCALAR_VALUE_TYPE_TO_PROTO_VALUE: Dict[
         None,
     ),
     ValueType.FLOAT: ("float_val", lambda x: float(x), None),
-    ValueType.DOUBLE: ("double_val", lambda x: x, {float, np.float64}),
+    ValueType.DOUBLE: ("double_val", lambda x: x, {float, np.float64, Decimal}),
     ValueType.STRING: ("string_val", lambda x: str(x), None),
     ValueType.BYTES: ("bytes_val", lambda x: x, {bytes}),
     ValueType.BOOL: ("bool_val", lambda x: x, {bool, np.bool_, int, np.int_}),
@@ -405,7 +406,7 @@ def _python_value_to_proto_value(
             if (sample == 0 or sample == 0.0) and feast_value_type != ValueType.BOOL:
                 # Numpy convert 0 to int. However, in the feature view definition, the type of column may be a float.
                 # So, if value is 0, type validation must pass if scalar_types are either int or float.
-                allowed_types = {np.int64, int, np.float64, float}
+                allowed_types = {np.int64, Decimal, int, np.float64, float}
                 assert (
                     type(sample) in allowed_types
                 ), f"Type `{type(sample)}` not in {allowed_types}"
@@ -538,8 +539,7 @@ def bq_to_feast_value_type(bq_type_as_str: str) -> ValueType:
         "NULL": ValueType.NULL,
     }
 
-    value_type = type_map.get(bq_type_as_str, ValueType.STRING)
-
+    value_type = type_map[bq_type_as_str]
     if is_list:
         value_type = ValueType[value_type.name + "_LIST"]
 
@@ -845,9 +845,7 @@ def pg_type_to_feast_value_type(type_str: str) -> ValueType:
     return value
 
 
-def feast_value_type_to_pa(
-    feast_type: ValueType, timestamp_unit: str = "us"
-) -> "pyarrow.DataType":
+def feast_value_type_to_pa(feast_type: ValueType) -> "pyarrow.DataType":
     import pyarrow
 
     type_map = {
@@ -858,7 +856,7 @@ def feast_value_type_to_pa(
         ValueType.STRING: pyarrow.string(),
         ValueType.BYTES: pyarrow.binary(),
         ValueType.BOOL: pyarrow.bool_(),
-        ValueType.UNIX_TIMESTAMP: pyarrow.timestamp(timestamp_unit),
+        ValueType.UNIX_TIMESTAMP: pyarrow.timestamp("us"),
         ValueType.INT32_LIST: pyarrow.list_(pyarrow.int32()),
         ValueType.INT64_LIST: pyarrow.list_(pyarrow.int64()),
         ValueType.DOUBLE_LIST: pyarrow.list_(pyarrow.float64()),
@@ -866,7 +864,7 @@ def feast_value_type_to_pa(
         ValueType.STRING_LIST: pyarrow.list_(pyarrow.string()),
         ValueType.BYTES_LIST: pyarrow.list_(pyarrow.binary()),
         ValueType.BOOL_LIST: pyarrow.list_(pyarrow.bool_()),
-        ValueType.UNIX_TIMESTAMP_LIST: pyarrow.list_(pyarrow.timestamp(timestamp_unit)),
+        ValueType.UNIX_TIMESTAMP_LIST: pyarrow.list_(pyarrow.timestamp("us")),
         ValueType.NULL: pyarrow.null(),
     }
     return type_map[feast_type]
